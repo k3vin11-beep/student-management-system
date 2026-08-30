@@ -2,7 +2,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
-
+import software.amazon.awssdk.enhanced.dynamodb.Key;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -257,7 +257,7 @@ public class Main {
         Department[] allDepartments = {scienceDept, financeDept, artsDept};
 
 
-        //send to cloud
+        //save to dynamodb cloud
         DynamoDbClient dynamoClient = DynamoDbClient.builder().build();
         DynamoDbEnhancedClient enhancedClient = DynamoDbEnhancedClient.builder()
                 .dynamoDbClient(dynamoClient)
@@ -266,11 +266,12 @@ public class Main {
         DynamoDbTable<StudentRecord> studentTable = enhancedClient.table(
                 "Students", TableSchema.fromBean(StudentRecord.class));
 
-
         ClassGroup[] allClassGroups = {group10A, group10B, group10C};
 
         for (ClassGroup group : allClassGroups) {
             for (Student student : group.students) {
+                StudentRecord existing = studentTable.getItem(Key.builder().partitionValue(String.valueOf(student.id)).build());
+
                 StudentRecord record = new StudentRecord();
                 record.setStudentId(String.valueOf(student.id));
                 record.setName(student.name);
@@ -282,18 +283,24 @@ public class Main {
                 }
                 record.setScores(scoresMap);
 
-                studentTable.putItem(record);
+                if (existing != null && existing.getPassword() != null) {
+                    record.setPassword(existing.getPassword());
+                } else {
+                    record.setPassword(String.valueOf(student.id));
+                }
 
+                studentTable.putItem(record);
             }
         }
 
         DynamoDbTable<teacherRecord> teacherTable = enhancedClient.table(
                 "Teachers", TableSchema.fromBean(teacherRecord.class));
-
         Teacher[] allTeachers = {Teacher1, Teacher2, Teacher3, Teacher4, Teacher5, Teacher6,
                 Teacher7, Teacher8, Teacher9, Teacher10, Teacher11, Teacher12};
 
         for (Teacher teacher : allTeachers) {
+            teacherRecord existing = teacherTable.getItem(Key.builder().partitionValue(String.valueOf(teacher.id)).build());
+
             teacherRecord record = new teacherRecord();
             record.setTeacherId(String.valueOf(teacher.id));
             record.setName(teacher.name);
@@ -303,8 +310,14 @@ public class Main {
                 subjectNames.add(subj.name);
             }
             record.setSubjectsTaught(subjectNames);
-            teacherTable.putItem(record);
 
+            if (existing != null && existing.getPassword() != null) {
+                record.setPassword(existing.getPassword());
+            } else {
+                record.setPassword(String.valueOf(teacher.id));
+            }
+
+            teacherTable.putItem(record);
         }
 
         DynamoDbTable<departmentRecord> departmentTable = enhancedClient.table(
@@ -333,7 +346,23 @@ public class Main {
 
         }
 
-        dynamoClient.close();
+        //get password from dynamo after its been updated
+        for (ClassGroup group : allClassGroups) {
+            for (Student student : group.students) {
+                StudentRecord record = studentTable.getItem(Key.builder().partitionValue(String.valueOf(student.id)).build());
+                if (record != null && record.getPassword() != null) {
+                    student.setPassword(record.getPassword());
+                }
+            }
+        }
+
+        for (Teacher teacher : allTeachers) {
+            teacherRecord record = teacherTable.getItem(Key.builder().partitionValue(String.valueOf(teacher.id)).build());
+            if (record != null && record.getPassword() != null) {
+                teacher.setPassword(record.getPassword());
+            }
+        }
+
 
         Person[] allPeople = new Person[class10AStudents.length + class10BStudents.length + class10CStudents.length
                 + allTeachers.length + 3 + 1]; // +3 HODs, +1 principal
@@ -347,6 +376,8 @@ public class Main {
         allPeople[index++] = hodFinancials;
         allPeople[index++] = hodArts;
         allPeople[index++] = principal;
+
+        //login
 
         Scanner scanner = new Scanner(System.in);
         System.out.println("Enter your ID:");
@@ -367,6 +398,26 @@ public class Main {
             System.out.println("Login failed. Invalid ID or password.");
         } else {
             System.out.println("Welcome, " + loggedInUser.name + "!");
+            if (loggedInUser.checkPassword(String.valueOf(loggedInUser.id))) {
+                System.out.println("You're using your default password. Set a new one now:");
+                String newPassword = scanner.nextLine();
+                loggedInUser.setPassword(newPassword);
+                System.out.println("Password updated.");
+
+                if (loggedInUser instanceof Student) {
+                    Student s = (Student) loggedInUser;
+                    StudentRecord record = studentTable.getItem(Key.builder().partitionValue(String.valueOf(s.id)).build());
+                    record.setPassword(newPassword);
+                    studentTable.putItem(record);
+                } else if (loggedInUser instanceof Teacher) {
+                    Teacher t = (Teacher) loggedInUser;
+                    teacherRecord record = teacherTable.getItem(Key.builder().partitionValue(String.valueOf(t.id)).build());
+                    record.setPassword(newPassword);
+                    teacherTable.putItem(record);
+                } else {
+                    System.out.println("(Note: password change not yet saved to the cloud for HOD/Principal.)");
+                }
+            }
 
                 if (loggedInUser instanceof Student) {
                     Student self = (Student) loggedInUser;   // "cast" back to Student to access its specific fields/methods
@@ -394,28 +445,123 @@ public class Main {
                 } }
                 else if (loggedInUser instanceof Teacher) {
                     Teacher self = (Teacher) loggedInUser;
-                    System.out.println("You teach: ");
-                    for (Subject subj : self.subjectTaught) {
-                        System.out.println(" - " + subj.name);
+                    boolean teacherRunning = true;
+                    while (teacherRunning) {
+                        System.out.println("\n--- Teacher Menu ---");
+                        System.out.println("1. View subjects I teach");
+                        System.out.println("2. View a class's performance");
+                        System.out.println("3. Logout");
+                        int choice = scanner.nextInt();
+                        scanner.nextLine(); // clear leftover newline before any String reads
+
+                        switch (choice) {
+                            case 1:
+                                System.out.println("You teach: ");
+                                for (Subject subj : self.subjectTaught) {
+                                    System.out.println(" - " + subj.name);
+                                }
+                                break;
+                            case 2:
+                                System.out.println("Which class? (10A / 10B / 10C)");
+                                String classChoice = scanner.nextLine();
+                                if (classChoice.equalsIgnoreCase("10A")) {
+                                    self.viewClassPerformance(group10A);
+                                } else if (classChoice.equalsIgnoreCase("10B")) {
+                                    self.viewClassPerformance(group10B);
+                                } else if (classChoice.equalsIgnoreCase("10C")) {
+                                    self.viewClassPerformance(group10C);
+                                } else {
+                                    System.out.println("Invalid class.");
+                                }
+                                break;
+                            case 3:
+                                teacherRunning = false;
+                                break;
+                            default:
+                                System.out.println("Invalid option");
+                        }
                     }
-                    // which class group to view? for now, let's show all 3
-                    self.viewClassPerformance(group10A);
-                    self.viewClassPerformance(group10B);
-                    self.viewClassPerformance(group10C);
+
                 } else if (loggedInUser instanceof HOD) {
                     HOD self = (HOD) loggedInUser;
                     Department myDept = null;
                     for (Department d : allDepartments) {
                         if (d.hod == self) { myDept = d; break; }
                     }
-                    if (myDept != null) self.viewDepartmentPerformance(myDept);
+
+                    boolean hodRunning = true;
+                    while (hodRunning) {
+                        System.out.println("\n--- HOD Menu ---");
+                        System.out.println("1. View department performance");
+                        System.out.println("2. View teachers in department");
+                        System.out.println("3. View classes in department");
+                        System.out.println("4. Logout");
+                        int choice = scanner.nextInt();
+
+                        switch (choice) {
+                            case 1:
+                                if (myDept != null) self.viewDepartmentPerformance(myDept);
+                                break;
+                            case 2:
+                                for (Teacher t : myDept.teachers) {
+                                    System.out.println(" - " + t.name);
+                                }
+                                break;
+                            case 3:
+                                for (ClassGroup c : myDept.classGroups) {
+                                    System.out.println(" - " + c.groupName);
+                                }
+                                break;
+                            case 4:
+                                hodRunning = false;
+                                break;
+                            default:
+                                System.out.println("Invalid option");
+                        }
+                    }
                 } else if (loggedInUser instanceof Principal) {
                     Principal self = (Principal) loggedInUser;
-                    self.viewSchoolPerformance(allDepartments);
+                    boolean principalRunning = true;
+                    while (principalRunning) {
+                        System.out.println("\n--- Principal Menu ---");
+                        System.out.println("1. View whole school performance");
+                        System.out.println("2. View a specific department");
+                        System.out.println("3. Logout");
+                        int choice = scanner.nextInt();
+                        scanner.nextLine();
+
+                        switch (choice) {
+                            case 1:
+                                self.viewSchoolPerformance(allDepartments);
+                                break;
+                            case 2:
+                                System.out.println("Which department? (Sciences / Financials / Arts)");
+                                String deptChoice = scanner.nextLine();
+                                Department chosen = null;
+                                for (Department d : allDepartments) {
+                                    if (d.departmentName.equalsIgnoreCase(deptChoice)) {
+                                        chosen = d;
+                                        break;
+                                    }
+                                }
+                                if (chosen != null) {
+                                    chosen.hod.viewDepartmentPerformance(chosen);
+                                } else {
+                                    System.out.println("Department not found.");
+                                }
+                                break;
+                            case 3:
+                                principalRunning = false;
+                                break;
+                            default:
+                                System.out.println("Invalid option");
+                        }
+                    }
                 }
             }
+        dynamoClient.close();
 
         }
 
-    }
+        }
 

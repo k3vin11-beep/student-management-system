@@ -8,6 +8,7 @@ public class StudentRecord {
     private String name;
     private String classGroup;
     private Map<String, Integer> scores;
+    private String password;
 
     public StudentRecord() {}
 
@@ -23,4 +24,12 @@ public class StudentRecord {
 
     public Map<String, Integer> getScores() { return scores; }
     public void setScores(Map<String, Integer> scores) { this.scores = scores; }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
 }

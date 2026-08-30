@@ -14,4 +14,7 @@ public class Person {
     public boolean checkPassword(String attempt) {
         return this.password.equals(attempt);
     }
+    public void setPassword(String newPassword) {
+        this.password = newPassword;
+    }
 }

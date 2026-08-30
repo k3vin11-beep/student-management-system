@@ -6,7 +6,8 @@ import java.util.List;
 public class teacherRecord {
     private String teacherId;
     private String name;
-    private List<String> subjectsTaught;   // just subject names, flattened
+    private List<String> subjectsTaught;
+    private String password;
 
     public teacherRecord() {}
 
@@ -19,4 +20,12 @@ public class teacherRecord {
 
     public List<String> getSubjectsTaught() { return subjectsTaught; }
     public void setSubjectsTaught(List<String> subjectsTaught) { this.subjectsTaught = subjectsTaught; }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
 }
