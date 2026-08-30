@@ -2,9 +2,12 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
-import java.util.HashMap;
-import java.util.Map;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
 public class Main {
     public static void main(String[] args) {
 
@@ -264,22 +267,155 @@ public class Main {
                 "Students", TableSchema.fromBean(StudentRecord.class));
 
 
-        StudentRecord thaboRecord = new StudentRecord();
-        thaboRecord.setStudentId(String.valueOf(thabo.id));   // int -> String
-        thaboRecord.setName(thabo.name);
-        thaboRecord.setClassGroup(thabo.classGroup);
+        ClassGroup[] allClassGroups = {group10A, group10B, group10C};
 
-        Map<String, Integer> thaboScoresMap = new HashMap<>();
-        for (Score s : thabo.scores) {
-            thaboScoresMap.put(s.subject.name, s.mark);
+        for (ClassGroup group : allClassGroups) {
+            for (Student student : group.students) {
+                StudentRecord record = new StudentRecord();
+                record.setStudentId(String.valueOf(student.id));
+                record.setName(student.name);
+                record.setClassGroup(student.classGroup);
+
+                Map<String, Integer> scoresMap = new HashMap<>();
+                for (Score s : student.scores) {
+                    scoresMap.put(s.subject.name, s.mark);
+                }
+                record.setScores(scoresMap);
+
+                studentTable.putItem(record);
+
+            }
         }
-        thaboRecord.setScores(thaboScoresMap);
 
+        DynamoDbTable<teacherRecord> teacherTable = enhancedClient.table(
+                "Teachers", TableSchema.fromBean(teacherRecord.class));
 
-        studentTable.putItem(thaboRecord);
-        System.out.println("Saved " + thabo.name + " to DynamoDB!");
+        Teacher[] allTeachers = {Teacher1, Teacher2, Teacher3, Teacher4, Teacher5, Teacher6,
+                Teacher7, Teacher8, Teacher9, Teacher10, Teacher11, Teacher12};
+
+        for (Teacher teacher : allTeachers) {
+            teacherRecord record = new teacherRecord();
+            record.setTeacherId(String.valueOf(teacher.id));
+            record.setName(teacher.name);
+
+            List<String> subjectNames = new ArrayList<>();
+            for (Subject subj : teacher.subjectTaught) {
+                subjectNames.add(subj.name);
+            }
+            record.setSubjectsTaught(subjectNames);
+            teacherTable.putItem(record);
+
+        }
+
+        DynamoDbTable<departmentRecord> departmentTable = enhancedClient.table(
+                "Department", TableSchema.fromBean(departmentRecord.class));
+
+        Department[] allDeptsForSaving = {scienceDept, financeDept, artsDept};
+
+        for (Department dept : allDeptsForSaving) {
+            departmentRecord record = new departmentRecord();
+            record.setDepartmentName(dept.departmentName);
+            record.setHodName(dept.hod.name);
+
+            List<String> teacherNames = new ArrayList<>();
+            for (Teacher t : dept.teachers) {
+                teacherNames.add(t.name);
+            }
+            record.setTeacherNames(teacherNames);
+
+            List<String> classGroupNames = new ArrayList<>();
+            for (ClassGroup cg : dept.classGroups) {
+                classGroupNames.add(cg.groupName);
+            }
+            record.setClassGroupNames(classGroupNames);
+
+            departmentTable.putItem(record);
+
+        }
 
         dynamoClient.close();
 
+        Person[] allPeople = new Person[class10AStudents.length + class10BStudents.length + class10CStudents.length
+                + allTeachers.length + 3 + 1]; // +3 HODs, +1 principal
+
+        int index = 0;
+        for (Student s : class10AStudents) allPeople[index++] = s;
+        for (Student s : class10BStudents) allPeople[index++] = s;
+        for (Student s : class10CStudents) allPeople[index++] = s;
+        for (Teacher t : allTeachers) allPeople[index++] = t;
+        allPeople[index++] = hodSciences;
+        allPeople[index++] = hodFinancials;
+        allPeople[index++] = hodArts;
+        allPeople[index++] = principal;
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Enter your ID:");
+        int loginId = scanner.nextInt();
+        scanner.nextLine();
+        System.out.println("Enter your password:");
+        String loginPassword = scanner.nextLine();
+
+        Person loggedInUser = null;
+        for (Person p : allPeople) {
+            if (p.id == loginId && p.checkPassword(loginPassword)) {
+                loggedInUser = p;
+                break;
+            }
+        }
+
+        if (loggedInUser == null) {
+            System.out.println("Login failed. Invalid ID or password.");
+        } else {
+            System.out.println("Welcome, " + loggedInUser.name + "!");
+
+                if (loggedInUser instanceof Student) {
+                    Student self = (Student) loggedInUser;   // "cast" back to Student to access its specific fields/methods
+                    boolean studentRunning = true;
+                    while (studentRunning) {
+                        System.out.println("\n--- Student Menu ---");
+                        System.out.println("1. View my performance (all subjects + GPA)");
+                        System.out.println("2. View my class group");
+                        System.out.println("3. Logout");
+                        int choice = scanner.nextInt();
+                        switch (choice) {
+                            case 1:
+                                self.viewMyPerformance();
+                                break;
+                            case 2:
+                                System.out.println("You are in class: " + self.classGroup);
+                                break;
+                            case 3:
+                                studentRunning = false;
+                                break;
+                            default:
+                                System.out.println("Invalid option");
+                                break;
+                        }
+                } }
+                else if (loggedInUser instanceof Teacher) {
+                    Teacher self = (Teacher) loggedInUser;
+                    System.out.println("You teach: ");
+                    for (Subject subj : self.subjectTaught) {
+                        System.out.println(" - " + subj.name);
+                    }
+                    // which class group to view? for now, let's show all 3
+                    self.viewClassPerformance(group10A);
+                    self.viewClassPerformance(group10B);
+                    self.viewClassPerformance(group10C);
+                } else if (loggedInUser instanceof HOD) {
+                    HOD self = (HOD) loggedInUser;
+                    Department myDept = null;
+                    for (Department d : allDepartments) {
+                        if (d.hod == self) { myDept = d; break; }
+                    }
+                    if (myDept != null) self.viewDepartmentPerformance(myDept);
+                } else if (loggedInUser instanceof Principal) {
+                    Principal self = (Principal) loggedInUser;
+                    self.viewSchoolPerformance(allDepartments);
+                }
+            }
+
+        }
+
     }
-}
+
